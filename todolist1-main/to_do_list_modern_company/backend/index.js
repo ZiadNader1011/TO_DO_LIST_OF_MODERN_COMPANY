@@ -6,11 +6,16 @@ const prisma = new PrismaClient();
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*", // هيسمح للفرونت إند الأونلاين بتاعك بس، ولو مش موجود هيفتح للكل كحماية ديفولت
+  origin: process.env.FRONTEND_URL || "*", 
   methods: ["GET", "POST", "PATCH", "DELETE"],
   credentials: true
 }));
 app.use(express.json());
+
+// === 🌟 التعديل الأول: مسار ترحيبي للدومين الرئيسي ===
+app.get("/", (_, res) => {
+  res.json({ message: "🚀 Backend server is running successfully on Vercel!" });
+});
 
 // --- TASKS ---
 app.get("/tasks", async (_, res) => {
@@ -19,17 +24,14 @@ app.get("/tasks", async (_, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // خداع الـ Frontend: بنلف على التاسكات ونباصي assigneeId بالقيم اللي الـ React مستنيها
     const modifiedTasks = tasks.map(task => {
-      // لو الوصف يبدأ بالعلامة السرية، أو لو حقل الـ relational id الأصلي مش مربوط (تأمين إضافي)
       if (task.description && task.description.includes("[ALL_EMPLOYEES]")) {
         return {
           ...task,
           assigneeId: "all",
-          description: task.description.replace("[ALL_EMPLOYEES]", "").trim() // تنظيف الوصف عشان يظهر نظيف للمستخدم
+          description: task.description.replace("[ALL_EMPLOYEES]", "").trim() 
         };
       }
-      // لو مربوطة بموظف معين، بريزما بترجع الحقل الضمني باسم assigneeId تلقائياً أو بنباصيه من كائن العلاقات
       return {
         ...task,
         assigneeId: task.assigneeId || "all" 
@@ -44,12 +46,9 @@ app.get("/tasks", async (_, res) => {
 
 app.post("/tasks", async (req, res) => {
   try {
-    // نفكك الـ assigneeId والـ createdBy تماماً لنمنع دخولهم في restOfBody إلى بريزما
     const { assigneeId, dueDate, createdBy, ...restOfBody } = req.body;
-
     const isAssignAll = !assigneeId || assigneeId === "all" || assigneeId.trim() === "";
 
-    // وسم الوصف بعلامة مميزة لو المهمة مبعوتة للكل
     let finalDescription = restOfBody.description || "";
     if (isAssignAll) {
       finalDescription = "[ALL_EMPLOYEES] " + finalDescription;
@@ -63,27 +62,18 @@ app.post("/tasks", async (req, res) => {
       }
     };
 
-    // بناء العلاقات بناءً على نوع الـ Assign
     if (!isAssignAll) {
-      prismaPayload.data.assignee = {
-        connect: { id: assigneeId }
-      };
-      prismaPayload.data.createdBy = {
-        connect: { id: assigneeId }
-      };
+      prismaPayload.data.assignee = { connect: { id: assigneeId } };
+      prismaPayload.data.createdBy = { connect: { id: assigneeId } };
     } else {
-      // لو للكل، بنسيب الـ assignee اختياري فاضي، وبنربط الـ createdBy بأي موظف ديفولت عشان السكيما تكتمل
       const firstEmployee = await prisma.employee.findFirst();
       if (firstEmployee) {
-        prismaPayload.data.createdBy = {
-          connect: { id: firstEmployee.id }
-        };
+        prismaPayload.data.createdBy = { connect: { id: firstEmployee.id } };
       }
     }
 
     const task = await prisma.task.create(prismaPayload);
     
-    // تعديل كائن الرد الراجع فوراً للـ Frontend عشان الـ state تتحدث في نفس اللحظة
     if (isAssignAll) {
       task.assigneeId = "all";
       task.description = task.description.replace("[ALL_EMPLOYEES]", "").trim();
@@ -101,7 +91,6 @@ app.post("/tasks", async (req, res) => {
 app.patch("/tasks/:id", async (req, res) => {
   try {
     const { assigneeId, dueDate, createdBy, ...restOfBody } = req.body;
-
     const updateData = { ...restOfBody };
     
     if (dueDate) {
@@ -117,7 +106,6 @@ app.patch("/tasks/:id", async (req, res) => {
           updateData.description = updateData.description.replace("[ALL_EMPLOYEES]", "").trim();
         }
       } else {
-        // تحويل المهمة إلى عامة: نفصل الموظف ونعلم الوصف
         updateData.assignee = { disconnect: true };
         if (updateData.description && !updateData.description.includes("[ALL_EMPLOYEES]")) {
           updateData.description = "[ALL_EMPLOYEES] " + updateData.description;
@@ -228,10 +216,7 @@ app.post("/reports", async (req, res) => {
     res.json(report);
   } catch (error) {
     console.error("🔥 PRISMA ERROR:", error);
-    res.status(500).json({
-      error: "Failed to create report",
-      details: error.message
-    });
+    res.status(500).json({ error: "Failed to create report", details: error.message });
   }
 });
 
@@ -246,9 +231,7 @@ app.delete("/reports/:id", async (req, res) => {
 
 app.delete("/employees/:id", async (req, res) => {
   try {
-    await prisma.employee.delete({
-      where: { id: req.params.id },
-    });
+    await prisma.employee.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -256,12 +239,16 @@ app.delete("/employees/:id", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5002; // سيقرأ البورت المكتوب في الـ .env أو بورت فيرسيل تلقائياً
+// التشغيل المحلي التقليدي
+const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
 
 process.on("SIGINT", async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+// === 🌟 التعديل الثاني والأساسي لـ Vercel ===
+export default app;
